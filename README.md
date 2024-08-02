@@ -1,3 +1,7 @@
+## Build
+
+make bin/sqlc-gen-python
+
 ## Usage
 
 ```yaml

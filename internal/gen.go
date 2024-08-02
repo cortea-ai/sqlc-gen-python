@@ -279,6 +279,9 @@ func buildModels(conf Config, req *plugin.GenerateRequest) []Struct {
 					Exclusions: conf.InflectionExcludeTableNames,
 				})
 			}
+			if conf.TablePrefix != "" {
+				structName = conf.TablePrefix + strings.ToUpper(structName[:1]) + structName[1:]
+			}
 			s := Struct{
 				Table:   plugin.Identifier{Schema: schema.Name, Name: table.Rel.Name},
 				Name:    modelName(structName, req.Settings),
