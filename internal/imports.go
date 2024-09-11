@@ -131,10 +131,7 @@ func (i *importer) queryImportSpecs(fileName string) (map[string]importSpec, map
 	std := stdImports(queryUses)
 
 	pkg := make(map[string]importSpec)
-	pkg["sqlalchemy"] = importSpec{Module: "sqlalchemy"}
-	if i.C.EmitAsyncQuerier {
-		pkg["sqlalchemy.ext.asyncio"] = importSpec{Module: "sqlalchemy.ext.asyncio"}
-	}
+	pkg["asyncpg"] = importSpec{Module: "asyncpg"}
 
 	queryValueModelImports := func(qv QueryValue) {
 		if qv.IsStruct() && qv.EmitStruct() {
@@ -154,12 +151,7 @@ func (i *importer) queryImportSpecs(fileName string) (map[string]importSpec, map
 			std["typing.Optional"] = importSpec{Module: "typing", Name: "Optional"}
 		}
 		if q.Cmd == ":many" {
-			if i.C.EmitSyncQuerier {
-				std["typing.Iterator"] = importSpec{Module: "typing", Name: "Iterator"}
-			}
-			if i.C.EmitAsyncQuerier {
-				std["typing.AsyncIterator"] = importSpec{Module: "typing", Name: "AsyncIterator"}
-			}
+			std["typing.AsyncIterator"] = importSpec{Module: "typing", Name: "AsyncIterator"}
 		}
 		queryValueModelImports(q.Ret)
 		for _, qv := range q.Args {

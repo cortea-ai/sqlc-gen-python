@@ -354,18 +354,6 @@ func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColum
 	return &gs
 }
 
-var postgresPlaceholderRegexp = regexp.MustCompile(`\B\$(\d+)\b`)
-
-// Sqlalchemy uses ":name" for placeholders, so "$N" is converted to ":pN"
-// This also means ":" has special meaning to sqlalchemy, so it must be escaped.
-func sqlalchemySQL(s, engine string) string {
-	s = strings.ReplaceAll(s, ":", `\\:`)
-	if engine == "postgresql" {
-		return postgresPlaceholderRegexp.ReplaceAllString(s, ":p$1")
-	}
-	return s
-}
-
 func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([]Query, error) {
 	qs := make([]Query, 0, len(req.Queries))
 	for _, query := range req.Queries {
@@ -387,7 +375,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 			MethodName:   methodName,
 			FieldName:    sdk.LowerTitle(query.Name) + "Stmt",
 			ConstantName: strings.ToUpper(methodName),
-			SQL:          sqlalchemySQL(query.Text, req.Settings.Engine),
+			SQL:          query.Text,
 			SourceName:   query.Filename,
 		}
 
@@ -625,18 +613,7 @@ func typeRefNode(base string, parts ...string) *pyast.Node {
 }
 
 func connMethodNode(method, name string, arg *pyast.Node) *pyast.Node {
-	args := []*pyast.Node{
-		{
-			Node: &pyast.Node_Call{
-				Call: &pyast.Call{
-					Func: typeRefNode("sqlalchemy", "text"),
-					Args: []*pyast.Node{
-						poet.Name(name),
-					},
-				},
-			},
-		},
-	}
+	args := []*pyast.Node{poet.Name(name)}
 	if arg != nil {
 		args = append(args, arg)
 	}
@@ -792,7 +769,7 @@ func asyncQuerierClassDef() *pyast.ClassDef {
 								},
 								{
 									Arg:        "conn",
-									Annotation: typeRefNode("sqlalchemy", "ext", "asyncio", "AsyncConnection"),
+									Annotation: typeRefNode("asyncpg", "pool", "PoolConnectionProxy"),
 								},
 							},
 						},
@@ -872,190 +849,81 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 		}
 	}
 
-	if ctx.C.EmitSyncQuerier {
-		cls := querierClassDef()
-		for _, q := range ctx.Queries {
-			if !ctx.OutputQuery(q.SourceName) {
-				continue
-			}
-			f := &pyast.FunctionDef{
-				Name: q.MethodName,
-				Args: &pyast.Arguments{
-					Args: []*pyast.Arg{
-						{
-							Arg: "self",
-						},
+	cls := asyncQuerierClassDef()
+	for _, q := range ctx.Queries {
+		if !ctx.OutputQuery(q.SourceName) {
+			continue
+		}
+		f := &pyast.AsyncFunctionDef{
+			Name: q.MethodName,
+			Args: &pyast.Arguments{
+				Args: []*pyast.Arg{
+					{
+						Arg: "self",
 					},
 				},
-			}
-
-			q.AddArgs(f.Args)
-			exec := connMethodNode("execute", q.ConstantName, q.ArgDictNode())
-
-			switch q.Cmd {
-			case ":one":
-				f.Body = append(f.Body,
-					assignNode("row", poet.Node(
-						&pyast.Call{
-							Func: poet.Attribute(exec, "first"),
-						},
-					)),
-					poet.Node(
-						&pyast.If{
-							Test: poet.Node(
-								&pyast.Compare{
-									Left: poet.Name("row"),
-									Ops: []*pyast.Node{
-										poet.Is(),
-									},
-									Comparators: []*pyast.Node{
-										poet.Constant(nil),
-									},
-								},
-							),
-							Body: []*pyast.Node{
-								poet.Return(
-									poet.Constant(nil),
-								),
-							},
-						},
-					),
-					poet.Return(q.Ret.RowNode("row")),
-				)
-				f.Returns = subscriptNode("Optional", q.Ret.Annotation())
-			case ":many":
-				f.Body = append(f.Body,
-					assignNode("result", exec),
-					poet.Node(
-						&pyast.For{
-							Target: poet.Name("row"),
-							Iter:   poet.Name("result"),
-							Body: []*pyast.Node{
-								poet.Expr(
-									poet.Yield(
-										q.Ret.RowNode("row"),
-									),
-								),
-							},
-						},
-					),
-				)
-				f.Returns = subscriptNode("Iterator", q.Ret.Annotation())
-			case ":exec":
-				f.Body = append(f.Body, exec)
-				f.Returns = poet.Constant(nil)
-			case ":execrows":
-				f.Body = append(f.Body,
-					assignNode("result", exec),
-					poet.Return(poet.Attribute(poet.Name("result"), "rowcount")),
-				)
-				f.Returns = poet.Name("int")
-			case ":execresult":
-				f.Body = append(f.Body,
-					poet.Return(exec),
-				)
-				f.Returns = typeRefNode("sqlalchemy", "engine", "Result")
-			default:
-				panic("unknown cmd " + q.Cmd)
-			}
-
-			cls.Body = append(cls.Body, poet.Node(f))
+			},
 		}
-		mod.Body = append(mod.Body, poet.Node(cls))
-	}
 
-	if ctx.C.EmitAsyncQuerier {
-		cls := asyncQuerierClassDef()
-		for _, q := range ctx.Queries {
-			if !ctx.OutputQuery(q.SourceName) {
-				continue
-			}
-			f := &pyast.AsyncFunctionDef{
-				Name: q.MethodName,
-				Args: &pyast.Arguments{
-					Args: []*pyast.Arg{
-						{
-							Arg: "self",
+		q.AddArgs(f.Args)
+
+		switch q.Cmd {
+		case ":one":
+			fetchrow := connMethodNode("fetchrow", q.ConstantName, q.ArgDictNode())
+			f.Body = append(f.Body,
+				assignNode("row", poet.Await(fetchrow)),
+				poet.Node(
+					&pyast.If{
+						Test: poet.Node(
+							&pyast.Compare{
+								Left: poet.Name("row"),
+								Ops: []*pyast.Node{
+									poet.Is(),
+								},
+								Comparators: []*pyast.Node{
+									poet.Constant(nil),
+								},
+							},
+						),
+						Body: []*pyast.Node{
+							poet.Return(
+								poet.Constant(nil),
+							),
 						},
 					},
-				},
-			}
-
-			q.AddArgs(f.Args)
-			exec := connMethodNode("execute", q.ConstantName, q.ArgDictNode())
-
-			switch q.Cmd {
-			case ":one":
-				f.Body = append(f.Body,
-					assignNode("row", poet.Node(
-						&pyast.Call{
-							Func: poet.Attribute(poet.Await(exec), "first"),
-						},
-					)),
-					poet.Node(
-						&pyast.If{
-							Test: poet.Node(
-								&pyast.Compare{
-									Left: poet.Name("row"),
-									Ops: []*pyast.Node{
-										poet.Is(),
-									},
-									Comparators: []*pyast.Node{
-										poet.Constant(nil),
-									},
-								},
+				),
+				poet.Return(q.Ret.RowNode("row")),
+			)
+			f.Returns = subscriptNode("Optional", q.Ret.Annotation())
+		case ":many":
+			cursor := connMethodNode("cursor", q.ConstantName, q.ArgDictNode())
+			f.Body = append(f.Body,
+				poet.Node(
+					&pyast.AsyncFor{
+						Target: poet.Name("row"),
+						Iter:   cursor,
+						Body: []*pyast.Node{
+							poet.Expr(
+								poet.Yield(
+									q.Ret.RowNode("row"),
+								),
 							),
-							Body: []*pyast.Node{
-								poet.Return(
-									poet.Constant(nil),
-								),
-							},
 						},
-					),
-					poet.Return(q.Ret.RowNode("row")),
-				)
-				f.Returns = subscriptNode("Optional", q.Ret.Annotation())
-			case ":many":
-				stream := connMethodNode("stream", q.ConstantName, q.ArgDictNode())
-				f.Body = append(f.Body,
-					assignNode("result", poet.Await(stream)),
-					poet.Node(
-						&pyast.AsyncFor{
-							Target: poet.Name("row"),
-							Iter:   poet.Name("result"),
-							Body: []*pyast.Node{
-								poet.Expr(
-									poet.Yield(
-										q.Ret.RowNode("row"),
-									),
-								),
-							},
-						},
-					),
-				)
-				f.Returns = subscriptNode("AsyncIterator", q.Ret.Annotation())
-			case ":exec":
-				f.Body = append(f.Body, poet.Await(exec))
-				f.Returns = poet.Constant(nil)
-			case ":execrows":
-				f.Body = append(f.Body,
-					assignNode("result", poet.Await(exec)),
-					poet.Return(poet.Attribute(poet.Name("result"), "rowcount")),
-				)
-				f.Returns = poet.Name("int")
-			case ":execresult":
-				f.Body = append(f.Body,
-					poet.Return(poet.Await(exec)),
-				)
-				f.Returns = typeRefNode("sqlalchemy", "engine", "Result")
-			default:
-				panic("unknown cmd " + q.Cmd)
-			}
-
-			cls.Body = append(cls.Body, poet.Node(f))
+					},
+				),
+			)
+			f.Returns = subscriptNode("AsyncIterator", q.Ret.Annotation())
+		case ":exec":
+			exec := connMethodNode("execute", q.ConstantName, q.ArgDictNode())
+			f.Body = append(f.Body, poet.Await(exec))
+			f.Returns = poet.Constant(nil)
+		default:
+			panic("unknown cmd " + q.Cmd)
 		}
-		mod.Body = append(mod.Body, poet.Node(cls))
+
+		cls.Body = append(cls.Body, poet.Node(f))
 	}
+	mod.Body = append(mod.Body, poet.Node(cls))
 
 	return poet.Node(mod)
 }
