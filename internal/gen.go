@@ -888,9 +888,11 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 		switch q.Cmd {
 		case ":one":
 			fetchrow := connMethodNode("fetchrow", q.ConstantName, q.ArgNodes()...)
-			f.Body = append(f.Body,
-				assignNode("row", poet.Await(fetchrow)),
-				poet.Node(
+			f.Body = append(f.Body, assignNode("row", poet.Await(fetchrow)))
+			if strings.HasPrefix(q.ConstantName, "INSERT") || strings.HasPrefix(q.ConstantName, "UPSERT") {
+				f.Returns = q.Ret.Annotation()
+			} else {
+				f.Body = append(f.Body, poet.Node(
 					&pyast.If{
 						Test: poet.Node(
 							&pyast.Compare{
@@ -909,10 +911,10 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 							),
 						},
 					},
-				),
-				poet.Return(q.Ret.RowNode("row")),
-			)
-			f.Returns = subscriptNode("Optional", q.Ret.Annotation())
+				))
+				f.Returns = subscriptNode("Optional", q.Ret.Annotation())
+			}
+			f.Body = append(f.Body, poet.Return(q.Ret.RowNode("row")))
 		case ":many":
 			cursor := connMethodNode("cursor", q.ConstantName, q.ArgNodes()...)
 			f.Body = append(f.Body,
