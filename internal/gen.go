@@ -151,6 +151,26 @@ func (q Query) AddArgs(args *pyast.Arguments) {
 	}
 }
 
+func (q Query) ArgNodes() []*pyast.Node {
+	args := []*pyast.Node{}
+	i := 1
+	for _, a := range q.Args {
+		if a.isEmpty() {
+			continue
+		}
+		if a.IsStruct() {
+			for _, f := range a.Struct.Fields {
+				args = append(args, typeRefNode(a.Name, f.Name))
+				i++
+			}
+		} else {
+			args = append(args, poet.Name(a.Name))
+			i++
+		}
+	}
+	return args
+}
+
 func (q Query) ArgDictNode() *pyast.Node {
 	dict := &pyast.Dict{}
 	i := 1
@@ -612,11 +632,9 @@ func typeRefNode(base string, parts ...string) *pyast.Node {
 	return n
 }
 
-func connMethodNode(method, name string, arg *pyast.Node) *pyast.Node {
+func connMethodNode(method, name string, params ...*pyast.Node) *pyast.Node {
 	args := []*pyast.Node{poet.Name(name)}
-	if arg != nil {
-		args = append(args, arg)
-	}
+	args = append(args, params...)
 	return &pyast.Node{
 		Node: &pyast.Node_Call{
 			Call: &pyast.Call{
@@ -869,7 +887,7 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 
 		switch q.Cmd {
 		case ":one":
-			fetchrow := connMethodNode("fetchrow", q.ConstantName, q.ArgDictNode())
+			fetchrow := connMethodNode("fetchrow", q.ConstantName, q.ArgNodes()...)
 			f.Body = append(f.Body,
 				assignNode("row", poet.Await(fetchrow)),
 				poet.Node(
@@ -896,7 +914,7 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 			)
 			f.Returns = subscriptNode("Optional", q.Ret.Annotation())
 		case ":many":
-			cursor := connMethodNode("cursor", q.ConstantName, q.ArgDictNode())
+			cursor := connMethodNode("cursor", q.ConstantName, q.ArgNodes()...)
 			f.Body = append(f.Body,
 				poet.Node(
 					&pyast.AsyncFor{
@@ -914,7 +932,7 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 			)
 			f.Returns = subscriptNode("AsyncIterator", q.Ret.Annotation())
 		case ":exec":
-			exec := connMethodNode("execute", q.ConstantName, q.ArgDictNode())
+			exec := connMethodNode("execute", q.ConstantName, q.ArgNodes()...)
 			f.Body = append(f.Body, poet.Await(exec))
 			f.Returns = poet.Constant(nil)
 		default:

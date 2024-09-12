@@ -1,3 +1,5 @@
+# Sqlc-gen-python for Asyncpg
+
 ## Build
 
 make bin/sqlc-gen-python
