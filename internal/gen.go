@@ -889,7 +889,8 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 		case ":one":
 			fetchrow := connMethodNode("fetchrow", q.ConstantName, q.ArgNodes()...)
 			f.Body = append(f.Body, assignNode("row", poet.Await(fetchrow)))
-			if strings.HasPrefix(q.ConstantName, "INSERT") || strings.HasPrefix(q.ConstantName, "UPSERT") {
+			if !strings.Contains(strings.ToUpper(q.SQL), "WHERE ") &&
+				(strings.HasPrefix(q.ConstantName, "INSERT") || strings.HasPrefix(q.ConstantName, "UPSERT")) {
 				f.Returns = q.Ret.Annotation()
 			} else {
 				f.Body = append(f.Body, poet.Node(
