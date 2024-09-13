@@ -889,8 +889,8 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 		case ":one":
 			fetchrow := connMethodNode("fetchrow", q.ConstantName, q.ArgNodes()...)
 			f.Body = append(f.Body, assignNode("row", poet.Await(fetchrow)))
-			if !strings.Contains(strings.ToUpper(q.SQL), "WHERE ") &&
-				(strings.HasPrefix(q.ConstantName, "INSERT") || strings.HasPrefix(q.ConstantName, "UPSERT")) {
+
+			if isAlwaysReturningInsert(q.SQL) {
 				f.Returns = q.Ret.Annotation()
 			} else {
 				f.Body = append(f.Body, poet.Node(
@@ -1027,4 +1027,19 @@ func Generate(_ context.Context, req *plugin.GenerateRequest) (*plugin.GenerateR
 	}
 
 	return &resp, nil
+}
+
+func isAlwaysReturningInsert(sql string) bool {
+	var hasInsert, hasWhere, hasReturning bool
+	for _, w := range strings.Fields(sql) {
+		switch strings.ToUpper(w) {
+		case "INSERT":
+			hasInsert = true
+		case "WHERE":
+			hasWhere = true
+		case "RETURNING":
+			hasReturning = true
+		}
+	}
+	return hasInsert && hasReturning && !hasWhere
 }
