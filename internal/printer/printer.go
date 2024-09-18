@@ -381,7 +381,7 @@ func (w *writer) printFunctionDef(fd *ast.FunctionDef, indent int32) {
 			}
 		}
 		if len(fd.Args.KwOnlyArgs) > 0 {
-			w.print(", *, ")
+			w.print(", ")
 			for i, arg := range fd.Args.KwOnlyArgs {
 				w.printArg(arg, indent)
 				if i != len(fd.Args.KwOnlyArgs)-1 {
