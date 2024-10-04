@@ -69,7 +69,7 @@ func queryValueUses(name string, qv QueryValue) bool {
 }
 
 func (i *importer) Imports(fileName string) []string {
-	if fileName == "models.py" {
+	if fileName == "db_models.py" {
 		return i.modelImports()
 	}
 	return i.queryImports(fileName)

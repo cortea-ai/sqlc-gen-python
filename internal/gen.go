@@ -998,8 +998,8 @@ func Generate(_ context.Context, req *plugin.GenerateRequest) (*plugin.GenerateR
 
 	output := map[string]string{}
 	result := pyprint.Print(buildModelsTree(&tctx, i), pyprint.Options{})
-	tctx.SourceName = "models.py"
-	output["models.py"] = string(result.Python)
+	tctx.SourceName = "db_models.py"
+	output["db_models.py"] = string(result.Python)
 
 	files := map[string]struct{}{}
 	for _, q := range queries {
