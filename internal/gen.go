@@ -38,12 +38,15 @@ type pyType struct {
 	IsNull    bool
 }
 
-func (t pyType) Annotation() *pyast.Node {
+func (t pyType) Annotation(isFuncSignature bool) *pyast.Node {
 	ann := poet.Name(t.InnerType)
 	if t.IsArray {
 		ann = subscriptNode("List", ann)
 	}
-	if t.IsNull {
+	if t.IsNull && isFuncSignature {
+		ann = optionalKeywordNode("Optional", ann)
+	}
+	if t.IsNull && !isFuncSignature {
 		ann = subscriptNode("Optional", ann)
 	}
 	return ann
@@ -69,9 +72,10 @@ type QueryValue struct {
 	Typ    pyType
 }
 
+// Annotation in function signature
 func (v QueryValue) Annotation() *pyast.Node {
 	if v.Typ != (pyType{}) {
-		return v.Typ.Annotation()
+		return v.Typ.Annotation(true)
 	}
 	if v.Struct != nil {
 		if v.Emit {
@@ -143,12 +147,21 @@ func (q Query) AddArgs(args *pyast.Arguments) {
 		})
 		return
 	}
+	var optionalArgs []*pyast.Arg
 	for _, a := range q.Args {
+		if a.Typ.IsNull {
+			optionalArgs = append(optionalArgs, &pyast.Arg{
+				Arg:        a.Name,
+				Annotation: a.Annotation(),
+			})
+			continue
+		}
 		args.KwOnlyArgs = append(args.KwOnlyArgs, &pyast.Arg{
 			Arg:        a.Name,
 			Annotation: a.Annotation(),
 		})
 	}
+	args.KwOnlyArgs = append(args.KwOnlyArgs, optionalArgs...)
 }
 
 func (q Query) ArgNodes() []*pyast.Node {
@@ -577,6 +590,31 @@ func subscriptNode(value string, slice *pyast.Node) *pyast.Node {
 	}
 }
 
+func optionalKeywordNode(value string, slice *pyast.Node) *pyast.Node {
+	v := &pyast.Node{
+		Node: &pyast.Node_Subscript{
+			Subscript: &pyast.Subscript{
+				Value: &pyast.Name{Id: value},
+				Slice: slice,
+			},
+		},
+	}
+	return &pyast.Node{
+		Node: &pyast.Node_Keyword{
+			Keyword: &pyast.Keyword{
+				Arg: string(pyprint.Print(v, pyprint.Options{}).Python),
+				Value: &pyast.Node{
+					Node: &pyast.Node_Constant{
+						Constant: &pyast.Constant{
+							Value: &pyast.Constant_None{None: true},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func dataclassNode(name string) *pyast.ClassDef {
 	return &pyast.ClassDef{
 		Name: name,
@@ -617,7 +655,7 @@ func fieldNode(f Field) *pyast.Node {
 		Node: &pyast.Node_AnnAssign{
 			AnnAssign: &pyast.AnnAssign{
 				Target:     &pyast.Name{Id: f.Name},
-				Annotation: f.Type.Annotation(),
+				Annotation: f.Type.Annotation(false),
 				Comment:    f.Comment,
 			},
 		},
