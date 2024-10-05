@@ -69,7 +69,7 @@ func queryValueUses(name string, qv QueryValue) bool {
 }
 
 func (i *importer) Imports(fileName string) []string {
-	if fileName == "db_models.py" {
+	if fileName == MODELS_FILENAME+".py" {
 		return i.modelImports()
 	}
 	return i.queryImports(fileName)
@@ -165,7 +165,7 @@ func (i *importer) queryImportSpecs(fileName string) (map[string]importSpec, map
 func (i *importer) queryImports(fileName string) []string {
 	std, pkg := i.queryImportSpecs(fileName)
 
-	modelImportStr := fmt.Sprintf("from %s import models", i.C.Package)
+	modelImportStr := fmt.Sprintf("from %s import %s", i.C.Package, MODELS_FILENAME)
 
 	importLines := []string{
 		buildImportBlock(std),

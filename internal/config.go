@@ -12,3 +12,5 @@ type Config struct {
 	// parametrized those fields. Associate tables are not covered!
 	RLSEnforcedFields []string `json:"rls_enforced_fields"`
 }
+
+const MODELS_FILENAME = "db_models"

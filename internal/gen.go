@@ -56,6 +56,8 @@ type Field struct {
 	Name    string
 	Type    pyType
 	Comment string
+	// EmbedFields contains the embedded fields that require scanning.
+	EmbedFields []Field
 }
 
 type Struct struct {
@@ -81,7 +83,7 @@ func (v QueryValue) Annotation() *pyast.Node {
 		if v.Emit {
 			return poet.Name(v.Struct.Name)
 		} else {
-			return typeRefNode("models", v.Struct.Name)
+			return typeRefNode(MODELS_FILENAME, v.Struct.Name)
 		}
 	}
 	panic("no type for QueryValue: " + v.Name)
@@ -109,14 +111,41 @@ func (v QueryValue) RowNode(rowVar string) *pyast.Node {
 	call := &pyast.Call{
 		Func: v.Annotation(),
 	}
-	for i, f := range v.Struct.Fields {
-		call.Keywords = append(call.Keywords, &pyast.Keyword{
-			Arg: f.Name,
-			Value: subscriptNode(
+	var idx int
+	for _, f := range v.Struct.Fields {
+		var val *pyast.Node
+		if len(f.EmbedFields) > 0 {
+			var embedFields []*pyast.Keyword
+			for _, embed := range f.EmbedFields {
+				embedFields = append(embedFields, &pyast.Keyword{
+					Arg: embed.Name,
+					Value: subscriptNode(
+						rowVar,
+						constantInt(idx),
+					),
+				})
+				idx++
+			}
+			val = &pyast.Node{
+				Node: &pyast.Node_Call{
+					Call: &pyast.Call{
+						Func:     f.Type.Annotation(false),
+						Keywords: embedFields,
+					},
+				},
+			}
+		} else {
+			val = subscriptNode(
 				rowVar,
-				constantInt(i),
-			),
+				constantInt(idx),
+			)
+			idx++
+		}
+		call.Keywords = append(call.Keywords, &pyast.Keyword{
+			Arg:   f.Name,
+			Value: val,
 		})
+
 	}
 	return &pyast.Node{
 		Node: &pyast.Node_Call{
@@ -355,6 +384,46 @@ func paramName(p *plugin.Parameter) string {
 type pyColumn struct {
 	id int32
 	*plugin.Column
+	embed *pyEmbed
+}
+
+type pyEmbed struct {
+	modelType string
+	modelName string
+	fields    []Field
+}
+
+// look through all the structs and attempt to find a matching one to embed
+// We need the name of the struct and its field names.
+func newPyEmbed(embed *plugin.Identifier, structs []Struct, defaultSchema string) *pyEmbed {
+	if embed == nil {
+		return nil
+	}
+
+	for _, s := range structs {
+		embedSchema := defaultSchema
+		if embed.Schema != "" {
+			embedSchema = embed.Schema
+		}
+
+		// compare the other attributes
+		if embed.Catalog != s.Table.Catalog || embed.Name != s.Table.Name || embedSchema != s.Table.Schema {
+			continue
+		}
+
+		fields := make([]Field, len(s.Fields))
+		for i, f := range s.Fields {
+			fields[i] = f
+		}
+
+		return &pyEmbed{
+			modelType: s.Name,
+			modelName: s.Name,
+			fields:    fields,
+		}
+	}
+
+	return nil
 }
 
 func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColumn) *Struct {
@@ -366,6 +435,12 @@ func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColum
 	for i, c := range columns {
 		colName := columnName(c.Column, i)
 		fieldName := colName
+
+		// override col with expected model name
+		if c.embed != nil {
+			colName = c.embed.modelName
+		}
+
 		// Track suffixes by the ID of the column, so that columns referring to
 		// the same numbered parameter can be reused.
 		var suffix int32
@@ -378,17 +453,25 @@ func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColum
 		if suffix > 0 {
 			fieldName = fmt.Sprintf("%s_%d", fieldName, suffix)
 		}
-		gs.Fields = append(gs.Fields, Field{
-			Name: fieldName,
-			Type: makePyType(req, c.Column),
-		})
+		f := Field{Name: fieldName}
+		if c.embed == nil {
+			f.Type = makePyType(req, c.Column)
+		} else {
+			f.Type = pyType{
+				InnerType: MODELS_FILENAME + "." + c.embed.modelType,
+				IsArray:   c.IsArray,
+				IsNull:    false,
+			}
+			f.EmbedFields = c.embed.fields
+		}
+		gs.Fields = append(gs.Fields, f)
 		seen[colName]++
 	}
 	return &gs
 }
 
 func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([]Query, error) {
-	rlsFieldsByTable := make(map[string][]string) // TODO
+	rlsFieldsByTable := make(map[string][]string)
 	if len(conf.RLSEnforcedFields) > 0 {
 		for i := range structs {
 			tableName := structs[i].Table.Name
@@ -475,7 +558,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 				return nil, fmt.Errorf("RLS field %s is not filtered in query %s", field, query.Name)
 			}
 		}
-		if len(query.Columns) == 1 {
+		if len(query.Columns) == 1 && query.Columns[0].EmbedTable == nil {
 			c := query.Columns[0]
 			gq.Ret = QueryValue{
 				Name: columnName(c, 0),
@@ -515,6 +598,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 					columns = append(columns, pyColumn{
 						id:     int32(i),
 						Column: c,
+						embed:  newPyEmbed(c.EmbedTable, structs, req.Catalog.DefaultSchema),
 					})
 				}
 				gs = columnsToStruct(req, query.Name+"Row", columns)
@@ -893,7 +977,7 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 							ImportFrom: &pyast.ImportFrom{
 								Module: ctx.C.Package,
 								Names: []*pyast.Node{
-									poet.Alias("models"),
+									poet.Alias(MODELS_FILENAME),
 								},
 							},
 						},
@@ -1068,8 +1152,8 @@ func Generate(_ context.Context, req *plugin.GenerateRequest) (*plugin.GenerateR
 
 	output := map[string]string{}
 	result := pyprint.Print(buildModelsTree(&tctx, i), pyprint.Options{})
-	tctx.SourceName = "db_models.py"
-	output["db_models.py"] = string(result.Python)
+	tctx.SourceName = MODELS_FILENAME + ".py"
+	output[MODELS_FILENAME+".py"] = string(result.Python)
 
 	files := map[string]struct{}{}
 	for _, q := range queries {
