@@ -8,4 +8,7 @@ type Config struct {
 	QueryParameterLimit         *int32   `json:"query_parameter_limit"`
 	InflectionExcludeTableNames []string `json:"inflection_exclude_table_names"`
 	TablePrefix                 string   `json:"table_prefix"`
+	// When a query uses a table with RLS enforced fields, it will be required to
+	// parametrized those fields. Associate tables are not covered!
+	RLSEnforcedFields []string `json:"rls_enforced_fields"`
 }

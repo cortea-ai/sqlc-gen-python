@@ -388,6 +388,20 @@ func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColum
 }
 
 func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([]Query, error) {
+	rlsFieldsByTable := make(map[string][]string) // TODO
+	if len(conf.RLSEnforcedFields) > 0 {
+		for i := range structs {
+			tableName := structs[i].Table.Name
+			for _, f := range structs[i].Fields {
+				for _, enforced := range conf.RLSEnforcedFields {
+					if f.Name == enforced {
+						rlsFieldsByTable[tableName] = append(rlsFieldsByTable[tableName], f.Name)
+					}
+				}
+			}
+		}
+	}
+
 	qs := make([]Query, 0, len(req.Queries))
 	for _, query := range req.Queries {
 		if query.Name == "" {
@@ -419,9 +433,20 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 		if qpl < 0 {
 			return nil, errors.New("invalid query parameter limit")
 		}
+		enforcedFields := make(map[string]bool)
+		for _, c := range query.Columns {
+			if fields, ok := rlsFieldsByTable[c.GetTable().GetName()]; ok {
+				for _, f := range fields {
+					enforcedFields[f] = false
+				}
+			}
+		}
 		if len(query.Params) > qpl || qpl == 0 {
 			var cols []pyColumn
 			for _, p := range query.Params {
+				if _, ok := enforcedFields[p.GetColumn().GetName()]; ok {
+					enforcedFields[p.Column.Name] = true
+				}
 				cols = append(cols, pyColumn{
 					id:     p.Number,
 					Column: p.Column,
@@ -435,6 +460,9 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 		} else {
 			args := make([]QueryValue, 0, len(query.Params))
 			for _, p := range query.Params {
+				if _, ok := enforcedFields[p.GetColumn().GetName()]; ok {
+					enforcedFields[p.Column.Name] = true
+				}
 				args = append(args, QueryValue{
 					Name: paramName(p),
 					Typ:  makePyType(req, p.Column),
@@ -442,7 +470,11 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 			}
 			gq.Args = args
 		}
-
+		for field, is_enforced := range enforcedFields {
+			if !is_enforced {
+				return nil, fmt.Errorf("RLS field %s is not filtered in query %s", field, query.Name)
+			}
+		}
 		if len(query.Columns) == 1 {
 			c := query.Columns[0]
 			gq.Ret = QueryValue{
