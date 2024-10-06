@@ -11,6 +11,8 @@ type Config struct {
 	// When a query uses a table with RLS enforced fields, it will be required to
 	// parametrized those fields. Associate tables are not covered!
 	RLSEnforcedFields []string `json:"rls_enforced_fields"`
+	// Merge queries defined in different files into one output queries.py file
+	MergeQueryFiles bool `json:"merge_query_files"`
 }
 
 const MODELS_FILENAME = "db_models"

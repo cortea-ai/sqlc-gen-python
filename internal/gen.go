@@ -1113,6 +1113,9 @@ type pyTmplCtx struct {
 }
 
 func (t *pyTmplCtx) OutputQuery(sourceName string) bool {
+	if t.C.MergeQueryFiles {
+		return true
+	}
 	return t.SourceName == sourceName
 }
 
@@ -1156,8 +1159,12 @@ func Generate(_ context.Context, req *plugin.GenerateRequest) (*plugin.GenerateR
 	output[MODELS_FILENAME+".py"] = string(result.Python)
 
 	files := map[string]struct{}{}
-	for _, q := range queries {
-		files[q.SourceName] = struct{}{}
+	if i.C.MergeQueryFiles {
+		files["db_queries.sql"] = struct{}{}
+	} else {
+		for _, q := range queries {
+			files[q.SourceName] = struct{}{}
+		}
 	}
 
 	for source := range files {

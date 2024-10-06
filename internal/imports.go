@@ -113,7 +113,7 @@ func (i *importer) modelImports() []string {
 func (i *importer) queryImportSpecs(fileName string) (map[string]importSpec, map[string]importSpec) {
 	queryUses := func(name string) bool {
 		for _, q := range i.Queries {
-			if q.SourceName != fileName {
+			if !i.C.MergeQueryFiles && q.SourceName != fileName {
 				continue
 			}
 			if queryValueUses(name, q.Ret) {
@@ -144,7 +144,7 @@ func (i *importer) queryImportSpecs(fileName string) (map[string]importSpec, map
 	}
 
 	for _, q := range i.Queries {
-		if q.SourceName != fileName {
+		if !i.C.MergeQueryFiles && q.SourceName != fileName {
 			continue
 		}
 		if q.Cmd == ":one" {
