@@ -118,27 +118,33 @@ func (v QueryValue) RowNode(rowVar string) *pyast.Node {
 			var embedFields []*pyast.Keyword
 			for _, embed := range f.EmbedFields {
 				embedFields = append(embedFields, &pyast.Keyword{
-					Arg: embed.Name,
-					Value: subscriptNode(
-						rowVar,
-						constantInt(idx),
-					),
+					Arg:   embed.Name,
+					Value: subscriptNode(rowVar, constantInt(idx)),
 				})
 				idx++
 			}
 			val = &pyast.Node{
-				Node: &pyast.Node_Call{
-					Call: &pyast.Call{
-						Func:     f.Type.Annotation(false),
-						Keywords: embedFields,
+				Node: &pyast.Node_Compare{
+					Compare: &pyast.Compare{
+						Left: &pyast.Node{
+							Node: &pyast.Node_Call{
+								Call: &pyast.Call{
+									Func:     f.Type.Annotation(false),
+									Keywords: embedFields,
+								},
+							},
+						},
+						Ops: []*pyast.Node{
+							poet.Name(fmt.Sprintf("if row[%d] else", idx-len(f.EmbedFields))),
+						},
+						Comparators: []*pyast.Node{
+							poet.Constant(nil),
+						},
 					},
 				},
 			}
 		} else {
-			val = subscriptNode(
-				rowVar,
-				constantInt(idx),
-			)
+			val = subscriptNode(rowVar, constantInt(idx))
 			idx++
 		}
 		call.Keywords = append(call.Keywords, &pyast.Keyword{
