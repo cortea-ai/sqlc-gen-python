@@ -129,7 +129,7 @@ func (v QueryValue) RowNode(rowVar string) *pyast.Node {
 						Left: &pyast.Node{
 							Node: &pyast.Node_Call{
 								Call: &pyast.Call{
-									Func:     f.Type.Annotation(false),
+									Func:     poet.Name(f.Type.InnerType),
 									Keywords: embedFields,
 								},
 							},
@@ -466,7 +466,7 @@ func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColum
 			f.Type = pyType{
 				InnerType: MODELS_FILENAME + "." + c.embed.modelType,
 				IsArray:   c.IsArray,
-				IsNull:    false,
+				IsNull:    !c.NotNull,
 			}
 			f.EmbedFields = c.embed.fields
 		}
@@ -523,7 +523,9 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 			return nil, errors.New("invalid query parameter limit")
 		}
 		enforcedFields := make(map[string]bool)
+		// log.Printf("%v\n\n", query)
 		for _, c := range query.Columns {
+			// log.Printf("%v\n\n", c)
 			if fields, ok := rlsFieldsByTable[c.GetTable().GetName()]; ok {
 				for _, f := range fields {
 					enforcedFields[f] = false
@@ -620,6 +622,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 		qs = append(qs, gq)
 	}
 	sort.Slice(qs, func(i, j int) bool { return qs[i].MethodName < qs[j].MethodName })
+	// return nil, errors.New("debug")
 	return qs, nil
 }
 
