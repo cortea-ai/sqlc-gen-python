@@ -44,7 +44,7 @@ func (t pyType) Annotation(isFuncSignature bool) *pyast.Node {
 		ann = subscriptNode("List", ann)
 	}
 	if t.IsNull && isFuncSignature {
-		ann = optionalKeywordNode("Optional", ann)
+		ann = optionalKeywordNode("Optional", ann, t.IsArray)
 	}
 	if t.IsNull && !isFuncSignature {
 		ann = subscriptNode("Optional", ann)
@@ -715,7 +715,7 @@ func subscriptNode(value string, slice *pyast.Node) *pyast.Node {
 	}
 }
 
-func optionalKeywordNode(value string, slice *pyast.Node) *pyast.Node {
+func optionalKeywordNode(value string, slice *pyast.Node, isArray bool) *pyast.Node {
 	v := &pyast.Node{
 		Node: &pyast.Node_Subscript{
 			Subscript: &pyast.Subscript{
@@ -724,17 +724,15 @@ func optionalKeywordNode(value string, slice *pyast.Node) *pyast.Node {
 			},
 		},
 	}
+	keyword := poet.Name("None")
+	if isArray {
+		keyword = poet.Name("[]")
+	}
 	return &pyast.Node{
 		Node: &pyast.Node_Keyword{
 			Keyword: &pyast.Keyword{
-				Arg: string(pyprint.Print(v, pyprint.Options{}).Python),
-				Value: &pyast.Node{
-					Node: &pyast.Node_Constant{
-						Constant: &pyast.Constant{
-							Value: &pyast.Constant_None{None: true},
-						},
-					},
-				},
+				Arg:   string(pyprint.Print(v, pyprint.Options{}).Python),
+				Value: keyword,
 			},
 		},
 	}
