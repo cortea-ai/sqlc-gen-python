@@ -114,7 +114,9 @@ func (v QueryValue) RowNode(rowVar string) *pyast.Node {
 	var idx int
 	for _, f := range v.Struct.Fields {
 		var val *pyast.Node
+		var argName string
 		if len(f.EmbedFields) > 0 {
+			argName = singularize(f.Name)
 			var embedFields []*pyast.Keyword
 			for _, embed := range f.EmbedFields {
 				embedFields = append(embedFields, &pyast.Keyword{
@@ -144,11 +146,12 @@ func (v QueryValue) RowNode(rowVar string) *pyast.Node {
 				},
 			}
 		} else {
+			argName = f.Name
 			val = subscriptNode(rowVar, constantInt(idx))
 			idx++
 		}
 		call.Keywords = append(call.Keywords, &pyast.Keyword{
-			Arg:   f.Name,
+			Arg:   argName,
 			Value: val,
 		})
 
@@ -774,10 +777,14 @@ func pydanticNode(name string) *pyast.ClassDef {
 }
 
 func fieldNode(f Field) *pyast.Node {
+	target := f.Name
+	if len(f.EmbedFields) > 0 {
+		target = singularize(target)
+	}
 	return &pyast.Node{
 		Node: &pyast.Node_AnnAssign{
 			AnnAssign: &pyast.AnnAssign{
-				Target:     &pyast.Name{Id: f.Name},
+				Target:     &pyast.Name{Id: target},
 				Annotation: f.Type.Annotation(false),
 				Comment:    f.Comment,
 			},
@@ -1210,4 +1217,44 @@ func isAlwaysReturningInsert(sql string) bool {
 		}
 	}
 	return hasInsert && hasReturning && !hasWhere
+}
+
+func singularize(name string) string {
+	irregulars := map[string]string{
+		"men":      "man",
+		"women":    "woman",
+		"children": "child",
+		"teeth":    "tooth",
+		"feet":     "foot",
+		"geese":    "goose",
+		"mice":     "mouse",
+		"people":   "person",
+		"oxen":     "ox",
+		"cacti":    "cactus",
+		"alumni":   "alumnus",
+	}
+
+	name = strings.ToLower(name)
+
+	if singular, found := irregulars[name]; found {
+		return singular
+	}
+
+	if len(name) == 0 {
+		return name
+	}
+
+	if strings.HasSuffix(name, "ies") {
+		return name[:len(name)-3] + "y"
+	} else if strings.HasSuffix(name, "es") {
+		// Special cases for -es
+		if strings.HasSuffix(name, "ses") || strings.HasSuffix(name, "xes") || strings.HasSuffix(name, "ches") || strings.HasSuffix(name, "shes") {
+			return name[:len(name)-2]
+		}
+		return name[:len(name)-1]
+	} else if strings.HasSuffix(name, "s") && len(name) > 1 {
+		return name[:len(name)-1]
+	}
+
+	return name
 }
