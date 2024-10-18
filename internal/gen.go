@@ -34,13 +34,18 @@ type Enum struct {
 }
 
 type pyType struct {
-	InnerType string
-	IsArray   bool
-	IsNull    bool
+	InnerType           string
+	IsArray             bool
+	IsNull              bool
+	HasCheckConstraints bool
 }
 
 func (t pyType) Annotation(isFuncSignature bool) *pyast.Node {
-	ann := poet.Name(t.InnerType)
+	typ := t.InnerType
+	if t.HasCheckConstraints {
+		typ = MODELS_FILENAME + "." + t.InnerType
+	}
+	ann := poet.Name(typ)
 	if t.IsArray {
 		ann = subscriptNode("List", ann)
 	}
@@ -255,9 +260,10 @@ func (q Query) ArgDictNode() *pyast.Node {
 func makePyType(req *plugin.GenerateRequest, col *plugin.Column) pyType {
 	typ := pyInnerType(req, col)
 	return pyType{
-		InnerType: typ,
-		IsArray:   col.IsArray,
-		IsNull:    !col.NotNull,
+		InnerType:           typ,
+		IsArray:             col.IsArray,
+		IsNull:              !col.NotNull,
+		HasCheckConstraints: len(col.CheckConstraints) > 0,
 	}
 }
 
