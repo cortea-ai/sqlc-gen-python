@@ -42,7 +42,7 @@ type pyType struct {
 
 func (t pyType) Annotation(isFuncSignature bool) *pyast.Node {
 	typ := t.InnerType
-	if t.HasCheckConstraints {
+	if t.HasCheckConstraints && isFuncSignature {
 		typ = MODELS_FILENAME + "." + t.InnerType
 	}
 	ann := poet.Name(typ)
