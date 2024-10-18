@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -261,6 +262,9 @@ func makePyType(req *plugin.GenerateRequest, col *plugin.Column) pyType {
 }
 
 func pyInnerType(req *plugin.GenerateRequest, col *plugin.Column) string {
+	if len(col.CheckConstraints) > 0 {
+		return modelName(col.Name, req.Settings)
+	}
 	switch req.Settings.Engine {
 	case "postgresql":
 		return postgresType(req, col)
@@ -297,7 +301,7 @@ func pyEnumValueName(value string) string {
 	return strings.ToUpper(id)
 }
 
-func buildEnums(req *plugin.GenerateRequest) []Enum {
+func buildEnums(req *plugin.GenerateRequest) ([]Enum, error) {
 	var enums []Enum
 	for _, schema := range req.Catalog.Schemas {
 		if schema.Name == "pg_catalog" || schema.Name == "information_schema" {
@@ -323,11 +327,39 @@ func buildEnums(req *plugin.GenerateRequest) []Enum {
 			}
 			enums = append(enums, e)
 		}
+		constrEnums := make(map[string][]string, 0)
+		for _, table := range schema.Tables {
+			for _, column := range table.Columns {
+				if len(column.CheckConstraints) > 0 {
+					if constrs, found := constrEnums[column.Name]; found {
+						if !reflect.DeepEqual(constrs, column.CheckConstraints) {
+							return nil, fmt.Errorf("check-constrained fields can share a name "+
+								"only with the same check constraints: %s",
+								column.Name,
+							)
+						}
+						continue
+					}
+					constrEnums[column.Name] = column.CheckConstraints
+					e := Enum{
+						Name: modelName(column.Name, req.Settings),
+					}
+					for _, v := range column.CheckConstraints {
+						e.Constants = append(e.Constants, Constant{
+							Name:  pyEnumValueName(v),
+							Value: v,
+							Type:  e.Name,
+						})
+					}
+					enums = append(enums, e)
+				}
+			}
+		}
 	}
 	if len(enums) > 0 {
 		sort.Slice(enums, func(i, j int) bool { return enums[i].Name < enums[j].Name })
 	}
-	return enums
+	return enums, nil
 }
 
 func buildModels(conf Config, req *plugin.GenerateRequest) []Struct {
@@ -1145,7 +1177,10 @@ func Generate(_ context.Context, req *plugin.GenerateRequest) (*plugin.GenerateR
 		}
 	}
 
-	enums := buildEnums(req)
+	enums, err := buildEnums(req)
+	if err != nil {
+		return nil, err
+	}
 	models := buildModels(conf, req)
 	queries, err := buildQueries(conf, req, models)
 	if err != nil {

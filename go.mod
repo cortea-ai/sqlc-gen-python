@@ -2,6 +2,8 @@ module github.com/sqlc-dev/sqlc-gen-python
 
 go 1.19
 
+replace github.com/sqlc-dev/plugin-sdk-go => github.com/cortea-ai/plugin-sdk-go v0.0.2
+
 require (
 	github.com/google/go-cmp v0.6.0
 	github.com/jinzhu/inflection v1.0.0

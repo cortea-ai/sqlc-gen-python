@@ -2,6 +2,8 @@
 
 ## Build
 
+GOPRIVATE=github.com/cortea-ai/* go mod tidy
+
 make bin/sqlc-gen-python
 
 ## Usage
