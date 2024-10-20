@@ -324,7 +324,7 @@ func pyEnumValueName(value string) string {
 	return strings.ToUpper(id)
 }
 
-func buildEnums(req *plugin.GenerateRequest) ([]Enum, error) {
+func buildEnums(conf Config, req *plugin.GenerateRequest) ([]Enum, error) {
 	var enums []Enum
 	for _, schema := range req.Catalog.Schemas {
 		if schema.Name == "pg_catalog" || schema.Name == "information_schema" {
@@ -364,8 +364,18 @@ func buildEnums(req *plugin.GenerateRequest) ([]Enum, error) {
 						continue
 					}
 					constrEnums[column.Name] = column.CheckConstraints
+					structName := column.Name
+					if !conf.EmitExactTableNames {
+						structName = inflection.Singular(inflection.SingularParams{
+							Name:       structName,
+							Exclusions: conf.InflectionExcludeTableNames,
+						})
+					}
+					if conf.TablePrefix != "" {
+						structName = conf.TablePrefix + strings.ToUpper(structName[:1]) + structName[1:]
+					}
 					e := Enum{
-						Name: modelName(column.Name, req.Settings),
+						Name: modelName(structName, req.Settings),
 					}
 					for _, v := range column.CheckConstraints {
 						e.Constants = append(e.Constants, Constant{
@@ -1228,7 +1238,7 @@ func Generate(_ context.Context, req *plugin.GenerateRequest) (*plugin.GenerateR
 		}
 	}
 
-	enums, err := buildEnums(req)
+	enums, err := buildEnums(conf, req)
 	if err != nil {
 		return nil, err
 	}
