@@ -46,11 +46,11 @@ func (t pyType) Annotation(isFuncSignature bool) *pyast.Node {
 		typ = MODELS_FILENAME + "." + t.InnerType
 	}
 	ann := poet.Name(typ)
-	if t.IsArray {
-		return subscriptNode("List", ann)
-	}
 	if t.IsNull && isFuncSignature {
 		return optionalKeywordNode("Optional", ann, t.IsArray)
+	}
+	if t.IsArray && !isFuncSignature {
+		return subscriptNode("List", ann)
 	}
 	if t.IsNull && !isFuncSignature {
 		return subscriptNode("Optional", ann)
@@ -798,6 +798,11 @@ func subscriptNode(value string, slice *pyast.Node) *pyast.Node {
 }
 
 func optionalKeywordNode(value string, slice *pyast.Node, isArray bool) *pyast.Node {
+	keyword := poet.Name("None")
+	if isArray {
+		value = "List"
+		keyword = poet.Name("[]")
+	}
 	v := &pyast.Node{
 		Node: &pyast.Node_Subscript{
 			Subscript: &pyast.Subscript{
@@ -805,10 +810,6 @@ func optionalKeywordNode(value string, slice *pyast.Node, isArray bool) *pyast.N
 				Slice: slice,
 			},
 		},
-	}
-	keyword := poet.Name("None")
-	if isArray {
-		keyword = poet.Name("[]")
 	}
 	return &pyast.Node{
 		Node: &pyast.Node_Keyword{
