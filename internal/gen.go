@@ -47,13 +47,13 @@ func (t pyType) Annotation(isFuncSignature bool) *pyast.Node {
 	}
 	ann := poet.Name(typ)
 	if t.IsArray {
-		ann = subscriptNode("List", ann)
+		return subscriptNode("List", ann)
 	}
 	if t.IsNull && isFuncSignature {
-		ann = optionalKeywordNode("Optional", ann, t.IsArray)
+		return optionalKeywordNode("Optional", ann, t.IsArray)
 	}
 	if t.IsNull && !isFuncSignature {
-		ann = subscriptNode("Optional", ann)
+		return subscriptNode("Optional", ann)
 	}
 	return ann
 }
@@ -64,6 +64,7 @@ type Field struct {
 	Comment string
 	// EmbedFields contains the embedded fields that require scanning.
 	EmbedFields []Field
+	IsJsonArray bool
 }
 
 type Struct struct {
@@ -122,7 +123,10 @@ func (v QueryValue) RowNode(rowVar string) *pyast.Node {
 		var val *pyast.Node
 		var argName string
 		if len(f.EmbedFields) > 0 {
-			argName = singularize(f.Name)
+			argName = inflection.Singular(inflection.SingularParams{
+				Name:       f.Name,
+				Exclusions: []string{},
+			})
 			var embedFields []*pyast.Keyword
 			for _, embed := range f.EmbedFields {
 				embedFields = append(embedFields, &pyast.Keyword{
@@ -131,26 +135,39 @@ func (v QueryValue) RowNode(rowVar string) *pyast.Node {
 				})
 				idx++
 			}
-			val = &pyast.Node{
-				Node: &pyast.Node_Compare{
-					Compare: &pyast.Compare{
-						Left: &pyast.Node{
-							Node: &pyast.Node_Call{
-								Call: &pyast.Call{
-									Func:     poet.Name(f.Type.InnerType),
-									Keywords: embedFields,
-								},
-							},
-						},
-						Ops: []*pyast.Node{
-							poet.Name(fmt.Sprintf("if row[%d] else", idx-len(f.EmbedFields))),
-						},
-						Comparators: []*pyast.Node{
-							poet.Constant(nil),
+			compare := &pyast.Compare{
+				Left: &pyast.Node{
+					Node: &pyast.Node_Call{
+						Call: &pyast.Call{
+							Func:     poet.Name(f.Type.InnerType),
+							Keywords: embedFields,
 						},
 					},
 				},
 			}
+			if f.Type.IsNull {
+				compare.Ops = []*pyast.Node{
+					poet.Name(fmt.Sprintf("if row[%d] else", idx-len(f.EmbedFields))),
+				}
+				compare.Comparators = []*pyast.Node{
+					poet.Constant(nil),
+				}
+			}
+			val = &pyast.Node{
+				Node: &pyast.Node_Compare{
+					Compare: compare,
+				},
+			}
+		} else if f.IsJsonArray {
+			argName = f.Name
+			var nullCond string
+			if f.Type.IsNull {
+				nullCond = fmt.Sprintf(" if row[%d] else []", idx)
+			}
+			val = poet.Name(fmt.Sprintf(`[
+                    %s.model_validate_json(r) for r in row[%d]
+                ]%s`, f.Type.InnerType, idx, nullCond))
+			idx++
 		} else {
 			argName = f.Name
 			val = subscriptNode(rowVar, constantInt(idx))
@@ -473,7 +490,7 @@ func newPyEmbed(embed *plugin.Identifier, structs []Struct, defaultSchema string
 	return nil
 }
 
-func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColumn) *Struct {
+func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColumn, structs []Struct) (*Struct, error) {
 	gs := Struct{
 		Name: name,
 	}
@@ -501,20 +518,35 @@ func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColum
 			fieldName = fmt.Sprintf("%s_%d", fieldName, suffix)
 		}
 		f := Field{Name: fieldName}
-		if c.embed == nil {
-			f.Type = makePyType(req, c.Column)
-		} else {
+		if c.embed != nil {
 			f.Type = pyType{
 				InnerType: MODELS_FILENAME + "." + c.embed.modelType,
 				IsArray:   c.IsArray,
 				IsNull:    !c.NotNull,
 			}
 			f.EmbedFields = c.embed.fields
+		} else if structs != nil && c.IsArray && strings.HasPrefix(c.GetTable().GetName(), "agg_") {
+			for _, s := range structs {
+				if s.Table.Name == c.OriginalName {
+					f.Type = pyType{
+						InnerType: MODELS_FILENAME + "." + s.Name,
+						IsArray:   c.IsArray,
+						IsNull:    !c.NotNull,
+					}
+					f.IsJsonArray = true
+					break
+				}
+			}
+			if !f.IsJsonArray {
+				return nil, fmt.Errorf("a special agg field's name does not match any table: %s", c.OriginalName)
+			}
+		} else {
+			f.Type = makePyType(req, c.Column)
 		}
 		gs.Fields = append(gs.Fields, f)
 		seen[colName]++
 	}
-	return &gs
+	return &gs, nil
 }
 
 func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([]Query, error) {
@@ -564,9 +596,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 			return nil, errors.New("invalid query parameter limit")
 		}
 		enforcedFields := make(map[string]bool)
-		// log.Printf("%v\n\n", query)
 		for _, c := range query.Columns {
-			// log.Printf("%v\n\n", c)
 			if fields, ok := rlsFieldsByTable[c.GetTable().GetName()]; ok {
 				for _, f := range fields {
 					enforcedFields[f] = false
@@ -584,10 +614,14 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 					Column: p.Column,
 				})
 			}
+			strct, err := columnsToStruct(req, query.Name+"Params", cols, nil)
+			if err != nil {
+				return nil, err
+			}
 			gq.Args = []QueryValue{{
 				Emit:   true,
 				Name:   "arg",
-				Struct: columnsToStruct(req, query.Name+"Params", cols),
+				Struct: strct,
 			}}
 		} else {
 			args := make([]QueryValue, 0, len(query.Params))
@@ -609,6 +643,9 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 		}
 		if len(query.Columns) == 1 && query.Columns[0].EmbedTable == nil {
 			c := query.Columns[0]
+			if c.IsArray && strings.HasPrefix(c.GetTable().GetName(), "agg_") {
+				return nil, fmt.Errorf("special agg fields serve no purpose when queried individually")
+			}
 			gq.Ret = QueryValue{
 				Name: columnName(c, 0),
 				Typ:  makePyType(req, c),
@@ -622,7 +659,6 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 					continue
 				}
 				same := true
-
 				for i, f := range s.Fields {
 					c := query.Columns[i]
 					// HACK: models do not have "models." on their types, so trim that so we can find matches
@@ -650,9 +686,14 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 						embed:  newPyEmbed(c.EmbedTable, structs, req.Catalog.DefaultSchema),
 					})
 				}
-				gs = columnsToStruct(req, query.Name+"Row", columns)
+				strct, err := columnsToStruct(req, query.Name+"Row", columns, structs)
+				if err != nil {
+					return nil, err
+				}
+				gs = strct
 				emit = true
 			}
+
 			gq.Ret = QueryValue{
 				Emit:   emit,
 				Name:   "i",
@@ -817,7 +858,10 @@ func pydanticNode(name string) *pyast.ClassDef {
 func fieldNode(f Field) *pyast.Node {
 	target := f.Name
 	if len(f.EmbedFields) > 0 {
-		target = singularize(target)
+		target = inflection.Singular(inflection.SingularParams{
+			Name:       target,
+			Exclusions: []string{},
+		})
 	}
 	return &pyast.Node{
 		Node: &pyast.Node_AnnAssign{
@@ -1258,44 +1302,4 @@ func isAlwaysReturningInsert(sql string) bool {
 		}
 	}
 	return hasInsert && hasReturning && !hasWhere
-}
-
-func singularize(name string) string {
-	irregulars := map[string]string{
-		"men":      "man",
-		"women":    "woman",
-		"children": "child",
-		"teeth":    "tooth",
-		"feet":     "foot",
-		"geese":    "goose",
-		"mice":     "mouse",
-		"people":   "person",
-		"oxen":     "ox",
-		"cacti":    "cactus",
-		"alumni":   "alumnus",
-	}
-
-	name = strings.ToLower(name)
-
-	if singular, found := irregulars[name]; found {
-		return singular
-	}
-
-	if len(name) == 0 {
-		return name
-	}
-
-	if strings.HasSuffix(name, "ies") {
-		return name[:len(name)-3] + "y"
-	} else if strings.HasSuffix(name, "es") {
-		// Special cases for -es
-		if strings.HasSuffix(name, "ses") || strings.HasSuffix(name, "xes") || strings.HasSuffix(name, "ches") || strings.HasSuffix(name, "shes") {
-			return name[:len(name)-2]
-		}
-		return name[:len(name)-1]
-	} else if strings.HasSuffix(name, "s") && len(name) > 1 {
-		return name[:len(name)-1]
-	}
-
-	return name
 }
