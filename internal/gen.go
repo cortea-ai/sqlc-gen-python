@@ -274,8 +274,8 @@ func (q Query) ArgDictNode() *pyast.Node {
 	}
 }
 
-func makePyType(req *plugin.GenerateRequest, col *plugin.Column) pyType {
-	typ := pyInnerType(req, col)
+func makePyType(conf Config, req *plugin.GenerateRequest, col *plugin.Column) pyType {
+	typ := pyInnerType(conf, req, col)
 	return pyType{
 		InnerType:           typ,
 		IsArray:             col.IsArray,
@@ -284,9 +284,10 @@ func makePyType(req *plugin.GenerateRequest, col *plugin.Column) pyType {
 	}
 }
 
-func pyInnerType(req *plugin.GenerateRequest, col *plugin.Column) string {
+func pyInnerType(conf Config, req *plugin.GenerateRequest, col *plugin.Column) string {
 	if len(col.CheckConstraints) > 0 {
-		return modelName(col.Name, req.Settings)
+		colName := conf.TablePrefix + strings.ToUpper(col.Name[:1]) + col.Name[1:]
+		return modelName(colName, req.Settings)
 	}
 	switch req.Settings.Engine {
 	case "postgresql":
@@ -424,7 +425,7 @@ func buildModels(conf Config, req *plugin.GenerateRequest) []Struct {
 				Comment: table.Comment,
 			}
 			for _, column := range table.Columns {
-				typ := makePyType(req, column) // TODO: This used to call compiler.ConvertColumn?
+				typ := makePyType(conf, req, column) // TODO: This used to call compiler.ConvertColumn?
 				typ.InnerType = strings.TrimPrefix(typ.InnerType, "models.")
 				s.Fields = append(s.Fields, Field{
 					Name:    column.Name,
@@ -500,7 +501,7 @@ func newPyEmbed(embed *plugin.Identifier, structs []Struct, defaultSchema string
 	return nil
 }
 
-func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColumn, structs []Struct) (*Struct, error) {
+func columnsToStruct(conf Config, req *plugin.GenerateRequest, name string, columns []pyColumn, structs []Struct) (*Struct, error) {
 	gs := Struct{
 		Name: name,
 	}
@@ -551,7 +552,7 @@ func columnsToStruct(req *plugin.GenerateRequest, name string, columns []pyColum
 				return nil, fmt.Errorf("a special agg field's name does not match any table: %s", c.OriginalName)
 			}
 		} else {
-			f.Type = makePyType(req, c.Column)
+			f.Type = makePyType(conf, req, c.Column)
 		}
 		gs.Fields = append(gs.Fields, f)
 		seen[colName]++
@@ -624,7 +625,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 					Column: p.Column,
 				})
 			}
-			strct, err := columnsToStruct(req, query.Name+"Params", cols, nil)
+			strct, err := columnsToStruct(conf, req, query.Name+"Params", cols, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -641,7 +642,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 				}
 				args = append(args, QueryValue{
 					Name: paramName(p),
-					Typ:  makePyType(req, p.Column),
+					Typ:  makePyType(conf, req, p.Column),
 				})
 			}
 			gq.Args = args
@@ -658,7 +659,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 			}
 			gq.Ret = QueryValue{
 				Name: columnName(c, 0),
-				Typ:  makePyType(req, c),
+				Typ:  makePyType(conf, req, c),
 			}
 		} else if len(query.Columns) > 1 {
 			var gs *Struct
@@ -672,7 +673,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 				for i, f := range s.Fields {
 					c := query.Columns[i]
 					// HACK: models do not have "models." on their types, so trim that so we can find matches
-					trimmedPyType := makePyType(req, c)
+					trimmedPyType := makePyType(conf, req, c)
 					trimmedPyType.InnerType = strings.TrimPrefix(trimmedPyType.InnerType, "models.")
 					sameName := f.Name == columnName(c, i)
 					sameType := f.Type == trimmedPyType
@@ -696,7 +697,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 						embed:  newPyEmbed(c.EmbedTable, structs, req.Catalog.DefaultSchema),
 					})
 				}
-				strct, err := columnsToStruct(req, query.Name+"Row", columns, structs)
+				strct, err := columnsToStruct(conf, req, query.Name+"Row", columns, structs)
 				if err != nil {
 					return nil, err
 				}
