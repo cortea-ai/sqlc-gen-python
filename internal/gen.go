@@ -798,7 +798,7 @@ func constantInt(value int) *pyast.Node {
 }
 
 func subscriptNode(value string, slice *pyast.Node) *pyast.Node {
-	return &pyast.Node{
+	v := &pyast.Node{
 		Node: &pyast.Node_Subscript{
 			Subscript: &pyast.Subscript{
 				Value: &pyast.Name{Id: value},
@@ -806,13 +806,34 @@ func subscriptNode(value string, slice *pyast.Node) *pyast.Node {
 			},
 		},
 	}
+	switch value {
+	case "List":
+		return &pyast.Node{
+			Node: &pyast.Node_Keyword{
+				Keyword: &pyast.Keyword{
+					Arg:   string(pyprint.Print(v, pyprint.Options{}).Python) + " ",
+					Value: poet.Name(" pydantic.Field(default_factory=list)"),
+				},
+			},
+		}
+	case "Optional":
+		return &pyast.Node{
+			Node: &pyast.Node_Keyword{
+				Keyword: &pyast.Keyword{
+					Arg:   string(pyprint.Print(v, pyprint.Options{}).Python) + " ",
+					Value: poet.Name(" pydantic.Field(default=None)"),
+				},
+			},
+		}
+	}
+	return v
 }
 
 func optionalKeywordNode(value string, slice *pyast.Node, isArray bool) *pyast.Node {
 	keyword := poet.Name("None")
 	if isArray {
 		value = "List"
-		keyword = poet.Name("[]")
+		keyword = poet.Name(" []")
 	}
 	v := &pyast.Node{
 		Node: &pyast.Node_Subscript{
@@ -825,7 +846,7 @@ func optionalKeywordNode(value string, slice *pyast.Node, isArray bool) *pyast.N
 	return &pyast.Node{
 		Node: &pyast.Node_Keyword{
 			Keyword: &pyast.Keyword{
-				Arg:   string(pyprint.Print(v, pyprint.Options{}).Python),
+				Arg:   string(pyprint.Print(v, pyprint.Options{}).Python) + " ",
 				Value: keyword,
 			},
 		},
