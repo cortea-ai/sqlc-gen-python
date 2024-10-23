@@ -50,10 +50,26 @@ func (t pyType) Annotation(isFuncSignature bool) *pyast.Node {
 		return optionalKeywordNode("Optional", ann, t.IsArray)
 	}
 	if t.IsArray && !isFuncSignature {
-		return subscriptNode("List", ann)
+		ann = subscriptNode("List", ann)
+		return &pyast.Node{
+			Node: &pyast.Node_Keyword{
+				Keyword: &pyast.Keyword{
+					Arg:   string(pyprint.Print(ann, pyprint.Options{}).Python) + " ",
+					Value: poet.Name(" pydantic.Field(default_factory=list)"),
+				},
+			},
+		}
 	}
 	if t.IsNull && !isFuncSignature {
-		return subscriptNode("Optional", ann)
+		ann = subscriptNode("Optional", ann)
+		return &pyast.Node{
+			Node: &pyast.Node_Keyword{
+				Keyword: &pyast.Keyword{
+					Arg:   string(pyprint.Print(ann, pyprint.Options{}).Python) + " ",
+					Value: poet.Name(" pydantic.Field(default=None)"),
+				},
+			},
+		}
 	}
 	return ann
 }
@@ -798,7 +814,7 @@ func constantInt(value int) *pyast.Node {
 }
 
 func subscriptNode(value string, slice *pyast.Node) *pyast.Node {
-	v := &pyast.Node{
+	return &pyast.Node{
 		Node: &pyast.Node_Subscript{
 			Subscript: &pyast.Subscript{
 				Value: &pyast.Name{Id: value},
@@ -806,31 +822,10 @@ func subscriptNode(value string, slice *pyast.Node) *pyast.Node {
 			},
 		},
 	}
-	switch value {
-	case "List":
-		return &pyast.Node{
-			Node: &pyast.Node_Keyword{
-				Keyword: &pyast.Keyword{
-					Arg:   string(pyprint.Print(v, pyprint.Options{}).Python) + " ",
-					Value: poet.Name(" pydantic.Field(default_factory=list)"),
-				},
-			},
-		}
-	case "Optional":
-		return &pyast.Node{
-			Node: &pyast.Node_Keyword{
-				Keyword: &pyast.Keyword{
-					Arg:   string(pyprint.Print(v, pyprint.Options{}).Python) + " ",
-					Value: poet.Name(" pydantic.Field(default=None)"),
-				},
-			},
-		}
-	}
-	return v
 }
 
 func optionalKeywordNode(value string, slice *pyast.Node, isArray bool) *pyast.Node {
-	keyword := poet.Name("None")
+	keyword := poet.Name(" None")
 	if isArray {
 		value = "List"
 		keyword = poet.Name(" []")
