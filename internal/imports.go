@@ -87,7 +87,8 @@ func (i *importer) modelImportSpecs() (map[string]importSpec, map[string]importS
 
 	std := stdImports(modelUses)
 	if i.C.EmitPydanticModels {
-		std["pydantic"] = importSpec{Module: "pydantic"}
+		std["cortea.pydantic_base.BaseModel"] = importSpec{Module: "cortea.pydantic_base", Name: "BaseModel"}
+		std["pydantic.Field"] = importSpec{Module: "pydantic", Name: "Field"}
 	} else {
 		std["dataclasses"] = importSpec{Module: "dataclasses"}
 	}
@@ -136,7 +137,8 @@ func (i *importer) queryImportSpecs(fileName string) (map[string]importSpec, map
 	queryValueModelImports := func(qv QueryValue) {
 		if qv.IsStruct() && qv.EmitStruct() {
 			if i.C.EmitPydanticModels {
-				std["pydantic"] = importSpec{Module: "pydantic"}
+				std["cortea.pydantic_base.BaseModel"] = importSpec{Module: "cortea.pydantic_base", Name: "BaseModel"}
+				std["pydantic.Field"] = importSpec{Module: "pydantic", Name: "Field"}
 			} else {
 				std["dataclasses"] = importSpec{Module: "dataclasses"}
 			}

@@ -55,7 +55,7 @@ func (t pyType) Annotation(isFuncSignature bool) *pyast.Node {
 			Node: &pyast.Node_Keyword{
 				Keyword: &pyast.Keyword{
 					Arg:   string(pyprint.Print(ann, pyprint.Options{}).Python) + " ",
-					Value: poet.Name(" pydantic.Field(default_factory=list)"),
+					Value: poet.Name(" Field(default_factory=list)"),
 				},
 			},
 		}
@@ -66,7 +66,7 @@ func (t pyType) Annotation(isFuncSignature bool) *pyast.Node {
 			Node: &pyast.Node_Keyword{
 				Keyword: &pyast.Keyword{
 					Arg:   string(pyprint.Print(ann, pyprint.Options{}).Python) + " ",
-					Value: poet.Name(" pydantic.Field(default=None)"),
+					Value: poet.Name(" Field(default=None)"),
 				},
 			},
 		}
@@ -867,18 +867,7 @@ func pydanticNode(name string) *pyast.ClassDef {
 	return &pyast.ClassDef{
 		Name: name,
 		Bases: []*pyast.Node{
-			{
-				Node: &pyast.Node_Attribute{
-					Attribute: &pyast.Attribute{
-						Value: &pyast.Node{
-							Node: &pyast.Node_Name{
-								Name: &pyast.Name{Id: "pydantic"},
-							},
-						},
-						Attr: "BaseModel",
-					},
-				},
-			},
+			poet.Name("BaseModel"),
 		},
 	}
 }
