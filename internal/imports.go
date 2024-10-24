@@ -212,7 +212,10 @@ func buildImportBlock2(pkgs map[string]importSpec) []importFromSpec {
 		})
 	}
 	sort.Slice(pkgImports, func(i, j int) bool {
-		return pkgImports[i].Module < pkgImports[j].Module || pkgImports[i].Names[0] < pkgImports[j].Names[0]
+		if pkgImports[i].Module != pkgImports[j].Module {
+			return pkgImports[i].Module < pkgImports[j].Module
+		}
+		return pkgImports[i].Names[0] < pkgImports[j].Names[0]
 	})
 	return pkgImports
 }
