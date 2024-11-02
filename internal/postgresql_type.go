@@ -42,6 +42,8 @@ func postgresType(req *plugin.GenerateRequest, col *plugin.Column) string {
 		return "str"
 	case "ltree", "lquery", "ltxtquery":
 		return "str"
+	case "vector":
+		return "list[float]"
 	default:
 		for _, schema := range req.Catalog.Schemas {
 			if schema.Name == "pg_catalog" || schema.Name == "information_schema" {
