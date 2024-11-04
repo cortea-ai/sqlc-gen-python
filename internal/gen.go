@@ -174,15 +174,19 @@ func (v QueryValue) RowNode(rowVar string) *pyast.Node {
 					Compare: compare,
 				},
 			}
-		} else if f.IsJsonArray {
+		} else if f.Type.IsArray {
 			argName = f.Name
 			var nullCond string
 			if f.Type.IsNull {
 				nullCond = fmt.Sprintf(" if row[%d] else []", idx)
 			}
-			val = poet.Name(fmt.Sprintf(`[
+			if f.IsJsonArray {
+				val = poet.Name(fmt.Sprintf(`[
                     %s.model_validate_json(r) for r in row[%d]
                 ]%s`, f.Type.InnerType, idx, nullCond))
+			} else {
+				val = poet.Name(fmt.Sprintf(`row[%d]%s`, idx, nullCond))
+			}
 			idx++
 		} else {
 			argName = f.Name
