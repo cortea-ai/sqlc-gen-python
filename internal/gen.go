@@ -552,7 +552,7 @@ func columnsToStruct(conf Config, req *plugin.GenerateRequest, name string, colu
 				IsNull:    !c.NotNull,
 			}
 			f.EmbedFields = c.embed.fields
-		} else if structs != nil && c.IsArray && strings.HasPrefix(c.GetTable().GetName(), "agg_") {
+		} else if structs != nil && c.IsArray && strings.HasPrefix(c.GetTable().GetName(), "view_agg_") {
 			for _, s := range structs {
 				if s.Table.Name == c.OriginalName {
 					f.Type = pyType{
@@ -670,7 +670,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 		}
 		if len(query.Columns) == 1 && query.Columns[0].EmbedTable == nil {
 			c := query.Columns[0]
-			if c.IsArray && strings.HasPrefix(c.GetTable().GetName(), "agg_") {
+			if c.IsArray && strings.HasPrefix(c.GetTable().GetName(), "view_agg_") {
 				return nil, fmt.Errorf("special agg fields serve no purpose when queried individually")
 			}
 			gq.Ret = QueryValue{
