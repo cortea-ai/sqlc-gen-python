@@ -446,7 +446,7 @@ func buildModels(conf Config, req *plugin.GenerateRequest) []Struct {
 			}
 			for _, column := range table.Columns {
 				typ := makePyType(conf, req, column) // TODO: This used to call compiler.ConvertColumn?
-				typ.InnerType = strings.TrimPrefix(typ.InnerType, "models.")
+				typ.InnerType = strings.TrimPrefix(typ.InnerType, "db_models.")
 				s.Fields = append(s.Fields, Field{
 					Name:    column.Name,
 					Type:    typ,
@@ -692,9 +692,9 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 				same := true
 				for i, f := range s.Fields {
 					c := query.Columns[i]
-					// HACK: models do not have "models." on their types, so trim that so we can find matches
+					// HACK: models do not have "db_models." on their types, so trim that so we can find matches
 					trimmedPyType := makePyType(conf, req, c)
-					trimmedPyType.InnerType = strings.TrimPrefix(trimmedPyType.InnerType, "models.")
+					trimmedPyType.InnerType = strings.TrimPrefix(trimmedPyType.InnerType, "db_models.")
 					sameName := f.Name == columnName(c, i)
 					sameType := f.Type == trimmedPyType
 					sameTable := sdk.SameTableName(c.Table, &s.Table, req.Catalog.DefaultSchema)

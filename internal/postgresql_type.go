@@ -52,9 +52,9 @@ func postgresType(req *plugin.GenerateRequest, col *plugin.Column) string {
 			for _, enum := range schema.Enums {
 				if columnType == enum.Name {
 					if schema.Name == req.Catalog.DefaultSchema {
-						return "models." + modelName(enum.Name, req.Settings)
+						return "db_models." + modelName(enum.Name, req.Settings)
 					}
-					return "models." + modelName(schema.Name+"_"+enum.Name, req.Settings)
+					return "db_models." + modelName(schema.Name+"_"+enum.Name, req.Settings)
 				}
 			}
 		}
