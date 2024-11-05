@@ -359,7 +359,7 @@ func buildEnums(conf Config, req *plugin.GenerateRequest) ([]Enum, error) {
 				enumName = schema.Name + "_" + enum.Name
 			}
 			e := Enum{
-				Name:    modelName(enumName, req.Settings),
+				Name:    conf.TablePrefix + modelName(enumName, req.Settings),
 				Comment: enum.Comment,
 			}
 			for _, v := range enum.Vals {
