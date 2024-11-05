@@ -311,7 +311,7 @@ func pyInnerType(conf Config, req *plugin.GenerateRequest, col *plugin.Column) s
 	}
 	switch req.Settings.Engine {
 	case "postgresql":
-		return postgresType(req, col)
+		return postgresType(req, conf, col)
 	default:
 		log.Println("unsupported engine type")
 		return "Any"
