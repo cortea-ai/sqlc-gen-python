@@ -43,7 +43,7 @@ func postgresType(req *plugin.GenerateRequest, conf Config, col *plugin.Column) 
 	case "ltree", "lquery", "ltxtquery":
 		return "str"
 	case "polygon", "path":
-		return "tuple[tuple[float, float]]"
+		return "tuple[tuple[float, float], ...]"
 	case "vector":
 		return "list[float]"
 	default:
