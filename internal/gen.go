@@ -954,7 +954,7 @@ func buildModelsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
 			Name: e.Name,
 			Bases: []*pyast.Node{
 				poet.Name("str"),
-				poet.Attribute(poet.Name("enum"), "Enum"),
+				poet.Attribute(poet.Name("enum"), "StrEnum"),
 			},
 		}
 		if e.Comment != "" {

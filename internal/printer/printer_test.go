@@ -60,7 +60,7 @@ func TestPrinter(t *testing.T) {
 												Name: &ast.Name{Id: "enum"},
 											},
 										},
-										Attr: "Enum",
+										Attr: "StrEnum",
 									},
 								},
 							},
