@@ -48,11 +48,6 @@ func TestPrinter(t *testing.T) {
 						Name: "Foo",
 						Bases: []*ast.Node{
 							{
-								Node: &ast.Node_Name{
-									Name: &ast.Name{Id: "str"},
-								},
-							},
-							{
 								Node: &ast.Node_Attribute{
 									Attribute: &ast.Attribute{
 										Value: &ast.Node{
