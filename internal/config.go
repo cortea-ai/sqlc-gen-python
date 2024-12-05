@@ -8,12 +8,11 @@ type Config struct {
 	QueryParameterLimit         *int32   `json:"query_parameter_limit"`
 	InflectionExcludeTableNames []string `json:"inflection_exclude_table_names"`
 	TablePrefix                 string   `json:"table_prefix"`
-	// When a query uses a table with RLS enforced fields, it will be required to
-	// parametrized those fields. Not covered:
-	// 	- Associate tables
+	// Best effort approach to enforce filtering on specific fields.Not covered:
+	// 	- Associative tables
 	// 	- sqlc.embed()
 	// 	- json_agg(tbl.*)
-	RLSEnforcedFields []string `json:"rls_enforced_fields"`
+	EnforcedFilterFields []string `json:"enforced_filter_fields"`
 	// Merge queries defined in different files into one output queries.py file
 	MergeQueryFiles bool `json:"merge_query_files"`
 }

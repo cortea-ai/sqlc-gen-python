@@ -581,14 +581,14 @@ func columnsToStruct(conf Config, req *plugin.GenerateRequest, name string, colu
 }
 
 func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([]Query, error) {
-	rlsFieldsByTable := make(map[string][]string)
-	if len(conf.RLSEnforcedFields) > 0 {
+	filterFieldsByTable := make(map[string][]string)
+	if len(conf.EnforcedFilterFields) > 0 {
 		for i := range structs {
 			tableName := structs[i].Table.Name
 			for _, f := range structs[i].Fields {
-				for _, enforced := range conf.RLSEnforcedFields {
+				for _, enforced := range conf.EnforcedFilterFields {
 					if f.Name == enforced {
-						rlsFieldsByTable[tableName] = append(rlsFieldsByTable[tableName], f.Name)
+						filterFieldsByTable[tableName] = append(filterFieldsByTable[tableName], f.Name)
 					}
 				}
 			}
@@ -604,7 +604,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 			continue
 		}
 		if query.Cmd == metadata.CmdCopyFrom {
-			return nil, errors.New("Support for CopyFrom in Python is not implemented")
+			return nil, errors.New("support for CopyFrom in Python is not implemented")
 		}
 
 		methodName := methodName(query.Name)
@@ -628,7 +628,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 		}
 		enforcedFields := make(map[string]bool)
 		for _, c := range query.Columns {
-			if fields, ok := rlsFieldsByTable[c.GetTable().GetName()]; ok {
+			if fields, ok := filterFieldsByTable[c.GetTable().GetName()]; ok {
 				for _, f := range fields {
 					enforcedFields[f] = false
 				}
@@ -669,7 +669,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 		}
 		for field, is_enforced := range enforcedFields {
 			if !is_enforced {
-				return nil, fmt.Errorf("RLS field %s is not filtered in query %s", field, query.Name)
+				return nil, fmt.Errorf("Field `%s` is not filtered in query %s", field, query.Name)
 			}
 		}
 		if len(query.Columns) == 1 && query.Columns[0].EmbedTable == nil {
