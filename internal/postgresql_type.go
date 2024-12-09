@@ -46,6 +46,8 @@ func postgresType(req *plugin.GenerateRequest, conf Config, col *plugin.Column) 
 		return "tuple[tuple[float, float], ...]"
 	case "vector":
 		return "list[float]"
+	case "box":
+		return "tuple[tuple[float, float], tuple[float, float]]"
 	default:
 		for _, schema := range req.Catalog.Schemas {
 			if schema.Name == "pg_catalog" || schema.Name == "information_schema" {
