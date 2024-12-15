@@ -209,6 +209,7 @@ func (v QueryValue) RowNode(rowVar string) *pyast.Node {
 // A struct used to generate methods and fields on the Queries struct
 type Query struct {
 	Cmd          string
+	ResponseType string
 	Comments     []string
 	MethodName   string
 	FieldName    string
@@ -611,6 +612,7 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 
 		gq := Query{
 			Cmd:          query.Cmd,
+			ResponseType: query.ResponseType,
 			Comments:     query.Comments,
 			MethodName:   methodName,
 			FieldName:    sdk.LowerTitle(query.Name) + "Stmt",
@@ -648,6 +650,9 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 			strct, err := columnsToStruct(conf, req, query.Name+"Params", cols, nil)
 			if err != nil {
 				return nil, err
+			}
+			if query.ResponseType != "" {
+				strct.Name = query.ResponseType
 			}
 			gq.Args = []QueryValue{{
 				Emit:   true,
@@ -723,6 +728,10 @@ func buildQueries(conf Config, req *plugin.GenerateRequest, structs []Struct) ([
 				}
 				gs = strct
 				emit = true
+			}
+
+			if gq.ResponseType != "" {
+				gs.Name = gq.ResponseType
 			}
 
 			gq.Ret = QueryValue{
