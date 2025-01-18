@@ -86,16 +86,6 @@ func (i *importer) modelImportSpecs() (map[string]importSpec, map[string]importS
 	}
 
 	std := stdImports(modelUses)
-	if i.C.EmitPydanticModels {
-		std["cortea.pydantic_base.BaseModel"] = importSpec{Module: "cortea.pydantic_base", Name: "BaseModel"}
-		std["pydantic.Field"] = importSpec{Module: "pydantic", Name: "Field"}
-	} else {
-		std["dataclasses"] = importSpec{Module: "dataclasses"}
-	}
-	if len(i.Enums) > 0 {
-		std["enum"] = importSpec{Module: "enum"}
-	}
-
 	pkg := make(map[string]importSpec)
 
 	return std, pkg
@@ -137,7 +127,7 @@ func (i *importer) queryImportSpecs(fileName string) (map[string]importSpec, map
 	queryValueModelImports := func(qv QueryValue) {
 		if qv.IsStruct() && qv.EmitStruct() {
 			if i.C.EmitPydanticModels {
-				std["cortea.pydantic_base.BaseModel"] = importSpec{Module: "cortea.pydantic_base", Name: "BaseModel"}
+				std["pydantic_base_class"] = i.importPydanticBaseClass()
 				std["pydantic.Field"] = importSpec{Module: "pydantic", Name: "Field"}
 			} else {
 				std["dataclasses"] = importSpec{Module: "dataclasses"}
@@ -177,6 +167,16 @@ func (i *importer) queryImports(fileName string) []string {
 		modelImportStr,
 	}
 	return importLines
+}
+
+func (i *importer) importPydanticBaseClass() importSpec {
+	if i.C.PydanticBaseClass != "" {
+		parts := strings.Split(i.C.PydanticBaseClass, ".")
+		module := strings.Join(parts[:len(parts)-1], ".")
+		name := parts[len(parts)-1]
+		return importSpec{Module: module, Name: name}
+	}
+	return importSpec{Module: "cortea.pydantic_base", Name: "BaseModel"}
 }
 
 type importFromSpec struct {

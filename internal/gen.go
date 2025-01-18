@@ -447,7 +447,7 @@ func buildModels(conf Config, req *plugin.GenerateRequest) []Struct {
 			}
 			for _, column := range table.Columns {
 				typ := makePyType(conf, req, column) // TODO: This used to call compiler.ConvertColumn?
-				typ.InnerType = strings.TrimPrefix(typ.InnerType, "db_models.")
+				typ.InnerType = strings.TrimPrefix(typ.InnerType, MODELS_FILENAME+".")
 				s.Fields = append(s.Fields, Field{
 					Name:    column.Name,
 					Type:    typ,
@@ -876,11 +876,25 @@ func dataclassNode(name string) *pyast.ClassDef {
 	}
 }
 
-func pydanticNode(name string) *pyast.ClassDef {
+func pydanticNode(name, baseClass string) *pyast.ClassDef {
+	baseModel := "BaseModel"
+	if baseClass != "" {
+		parts := strings.Split(baseClass, ".")
+		baseModel = parts[len(parts)-1]
+	}
 	return &pyast.ClassDef{
 		Name: name,
 		Bases: []*pyast.Node{
-			poet.Name("BaseModel"),
+			poet.Name(baseModel + "[dct." + name + "]"),
+		},
+	}
+}
+
+func typedDictNode(name string) *pyast.ClassDef {
+	return &pyast.ClassDef{
+		Name: name,
+		Bases: []*pyast.Node{
+			poet.Name("TypedDict"),
 		},
 	}
 }
@@ -953,16 +967,17 @@ func buildImportGroup(specs map[string]importSpec) *pyast.Node {
 	}
 }
 
-func buildModelsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
+func buildEnumsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
 	mod := moduleNode(ctx.SqlcVersion, "")
-	std, pkg := i.modelImportSpecs()
-	mod.Body = append(mod.Body, buildImportGroup(std), buildImportGroup(pkg))
+	pkg := make(map[string]importSpec)
+	pkg["enum"] = importSpec{Module: "enum", Name: "StrEnum"}
+	mod.Body = append(mod.Body, buildImportGroup(pkg))
 
 	for _, e := range ctx.Enums {
 		def := &pyast.ClassDef{
 			Name: e.Name,
 			Bases: []*pyast.Node{
-				poet.Attribute(poet.Name("enum"), "StrEnum"),
+				poet.Name("StrEnum"),
 			},
 		}
 		if e.Comment != "" {
@@ -984,10 +999,22 @@ func buildModelsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
 		})
 	}
 
+	return &pyast.Node{Node: &pyast.Node_Module{Module: mod}}
+}
+
+func buildModelsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
+	mod := moduleNode(ctx.SqlcVersion, "")
+	std, pkg := i.modelImportSpecs()
+	std["pydantic_base_class"] = i.importPydanticBaseClass()
+	std["pydantic.Field"] = importSpec{Module: "pydantic", Name: "Field"}
+	std[ENUMS_FILENAME] = importSpec{Module: ".", Name: ENUMS_FILENAME}
+	std[TYPED_DICTS_FILENAME] = importSpec{Module: ".", Name: TYPED_DICTS_FILENAME + " as dct"}
+	mod.Body = append(mod.Body, buildImportGroup(std), buildImportGroup(pkg))
+
 	for _, m := range ctx.Models {
 		var def *pyast.ClassDef
 		if ctx.C.EmitPydanticModels {
-			def = pydanticNode(m.Name)
+			def = pydanticNode(m.Name, ctx.C.PydanticBaseClass)
 		} else {
 			def = dataclassNode(m.Name)
 		}
@@ -1008,6 +1035,60 @@ func buildModelsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
 				ClassDef: def,
 			},
 		})
+	}
+
+	return &pyast.Node{Node: &pyast.Node_Module{Module: mod}}
+}
+
+func buildTypedDictsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
+	mod := moduleNode(ctx.SqlcVersion, "")
+	std, pkg := i.modelImportSpecs()
+	std["pydantic.Field"] = importSpec{Module: "pydantic", Name: "Field"}
+	std["typing.TypedDict"] = importSpec{Module: "typing", Name: "TypedDict"}
+	std[ENUMS_FILENAME] = importSpec{Module: ".", Name: ENUMS_FILENAME}
+	mod.Body = append(mod.Body, buildImportGroup(std), buildImportGroup(pkg))
+
+	for _, m := range ctx.Models {
+		def := typedDictNode(m.Name)
+		for _, f := range m.Fields {
+			if strings.HasPrefix(f.Type.InnerType, "DB") {
+				f.Type.InnerType = ENUMS_FILENAME + "." + f.Type.InnerType
+			}
+			def.Body = append(def.Body, fieldNode(f))
+		}
+		mod.Body = append(mod.Body, &pyast.Node{
+			Node: &pyast.Node_ClassDef{
+				ClassDef: def,
+			},
+		})
+	}
+
+	for _, q := range ctx.Queries {
+		if !ctx.OutputQuery(q.SourceName) {
+			continue
+		}
+		for _, arg := range q.Args {
+			if arg.EmitStruct() {
+				def := typedDictNode(arg.Struct.Name)
+				for _, f := range arg.Struct.Fields {
+					if strings.HasPrefix(f.Type.InnerType, MODELS_FILENAME+".") {
+						f.Type.InnerType = strings.TrimPrefix(f.Type.InnerType, MODELS_FILENAME+".")
+					}
+					def.Body = append(def.Body, fieldNode(f))
+				}
+				mod.Body = append(mod.Body, poet.Node(def))
+			}
+		}
+		if q.Ret.EmitStruct() {
+			def := typedDictNode(q.Ret.Struct.Name)
+			for _, f := range q.Ret.Struct.Fields {
+				if strings.HasPrefix(f.Type.InnerType, MODELS_FILENAME+".") {
+					f.Type.InnerType = strings.TrimPrefix(f.Type.InnerType, MODELS_FILENAME+".")
+				}
+				def.Body = append(def.Body, fieldNode(f))
+			}
+			mod.Body = append(mod.Body, poet.Node(def))
+		}
 	}
 
 	return &pyast.Node{Node: &pyast.Node_Module{Module: mod}}
@@ -1092,6 +1173,8 @@ func asyncQuerierClassDef() *pyast.ClassDef {
 func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 	mod := moduleNode(ctx.SqlcVersion, source)
 	std, pkg := i.queryImportSpecs(source)
+	std[ENUMS_FILENAME] = importSpec{Module: ".", Name: ENUMS_FILENAME}
+	std[TYPED_DICTS_FILENAME] = importSpec{Module: ".", Name: TYPED_DICTS_FILENAME + " as dct"}
 	mod.Body = append(mod.Body, buildImportGroup(std), buildImportGroup(pkg))
 	mod.Body = append(mod.Body, &pyast.Node{
 		Node: &pyast.Node_ImportGroup{
@@ -1122,7 +1205,7 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 			if arg.EmitStruct() {
 				var def *pyast.ClassDef
 				if ctx.C.EmitPydanticModels {
-					def = pydanticNode(arg.Struct.Name)
+					def = pydanticNode(arg.Struct.Name, ctx.C.PydanticBaseClass)
 				} else {
 					def = dataclassNode(arg.Struct.Name)
 				}
@@ -1135,7 +1218,7 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 		if q.Ret.EmitStruct() {
 			var def *pyast.ClassDef
 			if ctx.C.EmitPydanticModels {
-				def = pydanticNode(q.Ret.Struct.Name)
+				def = pydanticNode(q.Ret.Struct.Name, ctx.C.PydanticBaseClass)
 			} else {
 				def = dataclassNode(q.Ret.Struct.Name)
 			}
@@ -1282,9 +1365,20 @@ func Generate(_ context.Context, req *plugin.GenerateRequest) (*plugin.GenerateR
 	}
 
 	output := map[string]string{}
+
+	if len(enums) > 0 {
+		result := pyprint.Print(buildEnumsTree(&tctx, i), pyprint.Options{})
+		tctx.SourceName = ENUMS_FILENAME + ".py"
+		output[ENUMS_FILENAME+".py"] = string(result.Python)
+	}
+
 	result := pyprint.Print(buildModelsTree(&tctx, i), pyprint.Options{})
 	tctx.SourceName = MODELS_FILENAME + ".py"
 	output[MODELS_FILENAME+".py"] = string(result.Python)
+
+	result = pyprint.Print(buildTypedDictsTree(&tctx, i), pyprint.Options{})
+	tctx.SourceName = TYPED_DICTS_FILENAME + ".py"
+	output[TYPED_DICTS_FILENAME+".py"] = string(result.Python)
 
 	files := map[string]struct{}{}
 	if i.C.MergeQueryFiles {

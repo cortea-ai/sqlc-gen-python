@@ -15,6 +15,10 @@ type Config struct {
 	EnforcedFilterFields []string `json:"enforced_filter_fields"`
 	// Merge queries defined in different files into one output queries.py file
 	MergeQueryFiles bool `json:"merge_query_files"`
+	// Use custom pydantic base class for models
+	PydanticBaseClass string `json:"pydantic_base_class"`
 }
 
 const MODELS_FILENAME = "db_models"
+const ENUMS_FILENAME = "db_enums"
+const TYPED_DICTS_FILENAME = "db_typed_dicts"

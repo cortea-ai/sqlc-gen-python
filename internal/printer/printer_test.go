@@ -52,10 +52,9 @@ func TestPrinter(t *testing.T) {
 									Attribute: &ast.Attribute{
 										Value: &ast.Node{
 											Node: &ast.Node_Name{
-												Name: &ast.Name{Id: "enum"},
+												Name: &ast.Name{Id: "StrEnum"},
 											},
 										},
-										Attr: "StrEnum",
 									},
 								},
 							},
@@ -63,7 +62,7 @@ func TestPrinter(t *testing.T) {
 					},
 				},
 			},
-			Expected: `class Foo(str, enum.Enum):`,
+			Expected: `class Foo(StrEnum):`,
 		},
 		"dataclass": {
 			Node: &ast.Node{

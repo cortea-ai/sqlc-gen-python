@@ -56,9 +56,9 @@ func postgresType(req *plugin.GenerateRequest, conf Config, col *plugin.Column) 
 			for _, enum := range schema.Enums {
 				if columnType == enum.Name {
 					if schema.Name == req.Catalog.DefaultSchema {
-						return MODELS_FILENAME + "." + conf.TablePrefix + modelName(enum.Name, req.Settings)
+						return ENUMS_FILENAME + "." + conf.TablePrefix + modelName(enum.Name, req.Settings)
 					}
-					return MODELS_FILENAME + "." + conf.TablePrefix + modelName(schema.Name+"_"+enum.Name, req.Settings)
+					return ENUMS_FILENAME + "." + conf.TablePrefix + modelName(schema.Name+"_"+enum.Name, req.Settings)
 				}
 			}
 		}
