@@ -9,7 +9,7 @@ on:
         type: string
   push:
     tags:
-      - 'v*'  # trigger example: git tag v1.0.0 && git push origin v1.0.0
+      - '2*'  # eg. 20250118-r1
 
 permissions:
   contents: write
