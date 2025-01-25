@@ -1008,7 +1008,7 @@ func buildModelsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
 	std["pydantic_base_class"] = i.importPydanticBaseClass()
 	std["pydantic.Field"] = importSpec{Module: "pydantic", Name: "Field"}
 	std[ENUMS_FILENAME] = importSpec{Module: ".", Name: ENUMS_FILENAME}
-	std[TYPED_DICTS_FILENAME] = importSpec{Module: ".", Name: TYPED_DICTS_FILENAME + " as dct"}
+	std[MODEL_DICTS_FILENAME] = importSpec{Module: ".", Name: MODEL_DICTS_FILENAME + " as dct"}
 	mod.Body = append(mod.Body, buildImportGroup(std), buildImportGroup(pkg))
 
 	for _, m := range ctx.Models {
@@ -1040,7 +1040,7 @@ func buildModelsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
 	return &pyast.Node{Node: &pyast.Node_Module{Module: mod}}
 }
 
-func buildTypedDictsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
+func buildModelTypedDictsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
 	mod := moduleNode(ctx.SqlcVersion, "")
 	std, pkg := i.modelImportSpecs()
 	std["pydantic.Field"] = importSpec{Module: "pydantic", Name: "Field"}
@@ -1063,6 +1063,18 @@ func buildTypedDictsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
 		})
 	}
 
+	return &pyast.Node{Node: &pyast.Node_Module{Module: mod}}
+}
+
+func buildQueryTypedDictsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
+	mod := moduleNode(ctx.SqlcVersion, "")
+	std, pkg := i.modelImportSpecs()
+	std["pydantic.Field"] = importSpec{Module: "pydantic", Name: "Field"}
+	std["typing.TypedDict"] = importSpec{Module: "typing", Name: "TypedDict"}
+	std[ENUMS_FILENAME] = importSpec{Module: ".", Name: ENUMS_FILENAME}
+	std[MODELS_FILENAME] = importSpec{Module: ".", Name: MODELS_FILENAME}
+	mod.Body = append(mod.Body, buildImportGroup(std), buildImportGroup(pkg))
+
 	for _, q := range ctx.Queries {
 		if !ctx.OutputQuery(q.SourceName) {
 			continue
@@ -1071,9 +1083,6 @@ func buildTypedDictsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
 			if arg.EmitStruct() {
 				def := typedDictNode(arg.Struct.Name)
 				for _, f := range arg.Struct.Fields {
-					if strings.HasPrefix(f.Type.InnerType, MODELS_FILENAME+".") {
-						f.Type.InnerType = strings.TrimPrefix(f.Type.InnerType, MODELS_FILENAME+".")
-					}
 					def.Body = append(def.Body, fieldNode(f))
 				}
 				mod.Body = append(mod.Body, poet.Node(def))
@@ -1082,9 +1091,6 @@ func buildTypedDictsTree(ctx *pyTmplCtx, i *importer) *pyast.Node {
 		if q.Ret.EmitStruct() {
 			def := typedDictNode(q.Ret.Struct.Name)
 			for _, f := range q.Ret.Struct.Fields {
-				if strings.HasPrefix(f.Type.InnerType, MODELS_FILENAME+".") {
-					f.Type.InnerType = strings.TrimPrefix(f.Type.InnerType, MODELS_FILENAME+".")
-				}
 				def.Body = append(def.Body, fieldNode(f))
 			}
 			mod.Body = append(mod.Body, poet.Node(def))
@@ -1174,7 +1180,7 @@ func buildQueryTree(ctx *pyTmplCtx, i *importer, source string) *pyast.Node {
 	mod := moduleNode(ctx.SqlcVersion, source)
 	std, pkg := i.queryImportSpecs(source)
 	std[ENUMS_FILENAME] = importSpec{Module: ".", Name: ENUMS_FILENAME}
-	std[TYPED_DICTS_FILENAME] = importSpec{Module: ".", Name: TYPED_DICTS_FILENAME + " as dct"}
+	std[QUERY_DICTS_FILENAME] = importSpec{Module: ".", Name: QUERY_DICTS_FILENAME + " as dct"}
 	mod.Body = append(mod.Body, buildImportGroup(std), buildImportGroup(pkg))
 	mod.Body = append(mod.Body, &pyast.Node{
 		Node: &pyast.Node_ImportGroup{
@@ -1376,9 +1382,13 @@ func Generate(_ context.Context, req *plugin.GenerateRequest) (*plugin.GenerateR
 	tctx.SourceName = MODELS_FILENAME + ".py"
 	output[MODELS_FILENAME+".py"] = string(result.Python)
 
-	result = pyprint.Print(buildTypedDictsTree(&tctx, i), pyprint.Options{})
-	tctx.SourceName = TYPED_DICTS_FILENAME + ".py"
-	output[TYPED_DICTS_FILENAME+".py"] = string(result.Python)
+	result = pyprint.Print(buildModelTypedDictsTree(&tctx, i), pyprint.Options{})
+	tctx.SourceName = MODEL_DICTS_FILENAME + ".py"
+	output[MODEL_DICTS_FILENAME+".py"] = string(result.Python)
+
+	result = pyprint.Print(buildQueryTypedDictsTree(&tctx, i), pyprint.Options{})
+	tctx.SourceName = QUERY_DICTS_FILENAME + ".py"
+	output[QUERY_DICTS_FILENAME+".py"] = string(result.Python)
 
 	files := map[string]struct{}{}
 	if i.C.MergeQueryFiles {

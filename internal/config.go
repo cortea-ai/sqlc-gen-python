@@ -21,4 +21,5 @@ type Config struct {
 
 const MODELS_FILENAME = "db_models"
 const ENUMS_FILENAME = "db_enums"
-const TYPED_DICTS_FILENAME = "db_typed_dicts"
+const MODEL_DICTS_FILENAME = "db_model_dicts"
+const QUERY_DICTS_FILENAME = "db_query_dicts"
